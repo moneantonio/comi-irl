@@ -1,6 +1,6 @@
 # CoMI-IRL
 
-Code for the paper **CoMI-IRL** (Clustering-of-Modes-of-Intention Inverse Reinforcement Learning). Add paper link/citation here once available.
+Code for the paper A Behavior-first approach to Multi-Intention Inverse Reinforcement Learning (link: TODO), which introduces **CoMI-IRL** (Contrastive Multi-Intention Inverse Reinforcement Learning).
 
 ## Repository layout
 
@@ -97,4 +97,4 @@ Example launch scripts (`run_*.sh`) reproduce the paper's experiment sweeps — 
 
 ## Citation
 
-Add BibTeX entry once the paper is published.
+To be Added
