@@ -53,7 +53,7 @@ python-igraph
 
 ### `essinfogail` dependency
 
-`main.py` and `khgail.py` import environment wrappers from `essinfogail.envs` (custom MuJoCo environment wrappers for Reacher/Pusher/Walker2d/Hopper/HalfCheetah with multi-intention experts, plus `essinfogail/expert_imitation_trajectories/`). This package is **not included** in this repository. Obtain/place it as an `essinfogail/` directory at the repo root before running `main.py` or `khgail.py`.
+`main.py` and `khgail.py` import environment wrappers from `essinfogail.envs` (custom MuJoCo environment wrappers for Reacher/Pusher/Walker2d/Hopper/HalfCheetah with multi-intention experts, plus `essinfogail/expert_imitation_trajectories/`). This is a separate project by other developers, **not included** in this repository: [Ess-InfoGAIL](https://github.com/tRNAoO/Ess-InfoGAIL). Clone it and place it as an `essinfogail/` directory at the repo root before running `main.py` or `khgail.py`.
 
 ## Usage
 
