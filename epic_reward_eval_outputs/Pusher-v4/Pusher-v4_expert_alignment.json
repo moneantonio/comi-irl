@@ -1,0 +1,10 @@
+{
+  "env": "Pusher-v4",
+  "n_transitions_global": 1024,
+  "n_rewards": 363,
+  "n_action_candidates": 32,
+  "action_noise_scale": 0.15,
+  "best_alignment_path": "/Users/antoniomone/Desktop/PhD/PHD Projects/CoMI-IRL/comi-irl/learners_K-AIRL/Pusher-v4/seed_3/K_12/C10/airl_cluster_10_mode_2_reward_net_state_dict.zip",
+  "best_alignment_distance": 0.33338601646729427,
+  "best_alignment_corr": 0.6666139835327057
+}

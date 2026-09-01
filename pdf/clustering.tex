@@ -1,0 +1,997 @@
+% filepath: /Users/antoniomone/Desktop/PhD/PHD Projects/CoMI-IRL/comi-irl/docs/graph_clustering_methodology.tex
+\documentclass[11pt,a4paper]{article}
+
+% Packages
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{geometry}
+\usepackage{xcolor}
+\usepackage{tcolorbox}
+
+\geometry{margin=1in}
+
+% Custom commands
+\newcommand{\vect}[1]{\mathbf{#1}}
+\newcommand{\mat}[1]{\mathbf{#1}}
+\newcommand{\set}[1]{\mathcal{#1}}
+\newcommand{\norm}[1]{\left\|#1\right\|}
+\newcommand{\abs}[1]{\left|#1\right|}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\MI}{\mathrm{I}}
+
+\title{\textbf{Adaptive Graph-Based Trajectory Clustering:\\A Methodology for Behavioral Mode Discovery in CoMI-IRL}}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+We present an adaptive graph-based clustering method for discovering behavioral modes in trajectory embeddings learned by a contrastive behavior encoder. The method automatically detects whether the embedding space contains isolated islands (well-separated clusters) or forms a continuous manifold (overlapping clusters), and applies the appropriate clustering strategy. For isolated data, we use stable-$k$ connected component detection; for overlapping data, we perform a joint sweep over graph density ($k$) and Leiden resolution ($\gamma$), selecting the optimal configuration by modularity. We analyze the role of Jacobian-based behavioral features and demonstrate that they are largely redundant when the encoder is trained with global-local InfoMax and segment contrastive objectives, as these losses already capture the relevant control dynamics.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+%==============================================================================
+\section{Related Work}
+%==============================================================================
+
+\subsection{Core Algorithm: Leiden Community Detection}
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Traag, V. A., Waltman, L., \& Van Eck, N. J.} (2019). \textit{From Louvain to Leiden: guaranteeing well-connected communities.} Scientific Reports, 9(1), 5233.
+    \begin{itemize}
+        \item Introduces the Leiden algorithm as an improvement over Louvain
+        \item Guarantees well-connected communities (no disconnected subcommunities)
+        \item Optimizes modularity with a resolution parameter for multi-scale community detection
+    \end{itemize}
+\end{itemize}
+
+\subsection{Graph Construction and Spectral Methods}
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Von Luxburg, U.} (2007). \textit{A tutorial on spectral clustering.} Statistics and Computing, 17(4), 395-416.
+    \begin{itemize}
+        \item Comprehensive tutorial on $k$-NN graph construction for clustering
+        \item Discusses graph Laplacians and their spectral properties
+        \item Foundation for understanding graph-based clustering methods
+    \end{itemize}
+    
+    \item \textbf{Zelnik-Manor, L., \& Perona, P.} (2004). \textit{Self-tuning spectral clustering.} NeurIPS.
+    \begin{itemize}
+        \item Adaptive scaling for affinity matrices
+        \item Local neighborhood-based similarity computation
+    \end{itemize}
+\end{itemize}
+
+\subsection{Graph Clustering on High-Dimensional Embeddings}
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Becht, E., McInnes, L., Healy, J., et al.} (2019). \textit{Dimensionality reduction for visualizing single-cell data using UMAP.} Nature Biotechnology, 37(1), 38-44.
+    \begin{itemize}
+        \item Uses $k$-NN graphs combined with Leiden clustering for single-cell analysis
+        \item Demonstrates effectiveness of graph-based clustering on learned embeddings
+        \item Directly analogous to our trajectory embedding clustering approach
+    \end{itemize}
+    
+    \item \textbf{Wolf, F. A., Angerer, P., \& Theis, F. J.} (2018). \textit{SCANPY: large-scale single-cell gene expression data analysis.} Genome Biology, 19(1), 15.
+    \begin{itemize}
+        \item Implements Leiden clustering on $k$-NN graphs of high-dimensional embeddings
+        \item Scalable pipeline for clustering millions of data points
+    \end{itemize}
+\end{itemize}
+
+\subsection{Resolution Parameter and Modularity}
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Reichardt, J., \& Bornholdt, S.} (2006). \textit{Statistical mechanics of community detection.} Physical Review E, 74(1), 016110.
+    \begin{itemize}
+        \item Introduces resolution parameter interpretation in modularity optimization
+        \item Connects community detection to statistical physics
+    \end{itemize}
+    
+    \item \textbf{Fortunato, S., \& Barthélemy, M.} (2007). \textit{Resolution limit in community detection.} PNAS, 104(1), 36-41.
+    \begin{itemize}
+        \item Discusses fundamental resolution limits in modularity-based methods
+        \item Motivates the need for multi-resolution analysis
+    \end{itemize}
+\end{itemize}
+
+\subsection{Contrastive Learning and Mutual Information}
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Hjelm, R. D., Fedorov, A., Lavoie-Marchildon, S., et al.} (2019). \textit{Learning deep representations by mutual information estimation and maximization.} ICLR.
+    \begin{itemize}
+        \item Deep InfoMax (DIM) framework for representation learning
+        \item Maximizes mutual information between global and local features
+        \item Foundation for our global-local InfoMax loss
+    \end{itemize}
+    
+    \item \textbf{Chen, T., Kornblith, S., Norouzi, M., \& Hinton, G.} (2020). \textit{A simple framework for contrastive learning of visual representations.} ICML.
+    \begin{itemize}
+        \item SimCLR framework for contrastive self-supervised learning
+        \item Temperature-scaled InfoNCE loss
+        \item Basis for our instance contrastive objective
+    \end{itemize}
+    
+    \item \textbf{Bardes, A., Ponce, J., \& LeCun, Y.} (2022). \textit{VICReg: Variance-invariance-covariance regularization for self-supervised learning.} ICLR.
+    \begin{itemize}
+        \item Variance-Invariance-Covariance regularization
+        \item Prevents representation collapse without negative samples
+        \item Informs our embedding stability constraints
+    \end{itemize}
+\end{itemize}
+
+\subsection{Trajectory Clustering}
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Lee, J. G., Han, J., \& Whang, K. Y.} (2007). \textit{Trajectory clustering: a partition-and-group framework.} SIGMOD, 593-604.
+    \begin{itemize}
+        \item Framework for trajectory segmentation and clustering
+        \item Partition-and-group approach for handling variable-length trajectories
+    \end{itemize}
+    
+    \item \textbf{Yuan, G., Sun, P., Zhao, J., Li, D., \& Wang, C.} (2017). \textit{A review of moving object trajectory clustering algorithms.} Artificial Intelligence Review, 47(1), 123-144.
+    \begin{itemize}
+        \item Comprehensive survey of trajectory clustering methods
+        \item Covers distance-based, density-based, and partition-based approaches
+    \end{itemize}
+\end{itemize}
+
+\subsection{Jacobian-Based Behavioral Analysis}
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Todorov, E., \& Jordan, M. I.} (2002). \textit{Optimal feedback control as a theory of motor coordination.} Nature Neuroscience, 5(11), 1226-1235.
+    \begin{itemize}
+        \item Theoretical foundation for understanding control sensitivity in motor behaviors
+        \item Connects action-state relationships to behavioral strategies
+    \end{itemize}
+    
+    \item \textbf{Nguyen-Tuong, D., \& Peters, J.} (2011). \textit{Model learning for robot control: a survey.} Cognitive Processing, 12(4), 319-340.
+    \begin{itemize}
+        \item Survey of dynamics model learning for robotics
+        \item Discusses Jacobian estimation and its role in control
+    \end{itemize}
+\end{itemize}
+
+%==============================================================================
+\section{Problem Setting}
+%==============================================================================
+
+Given a set of $N$ expert trajectories $\{\tau_1, \ldots, \tau_N\}$ from $K$ unknown behavioral modes, each trajectory is encoded by a learned behavior encoder into a $D$-dimensional embedding:
+\begin{equation}
+    \vect{z}_i = f_\theta(\tau_i) \in \R^D
+\end{equation}
+where $f_\theta$ is a transformer-based encoder with parameters $\theta$.
+
+\textbf{Goal:} Discover $K$ behavioral modes (clusters) \textit{without knowing $K$ a priori}, handling two distinct data regimes:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Regime} & \textbf{Structure} & \textbf{Example Environments} \\
+\midrule
+Isolated & Well-separated islands, no overlap & Pusher-v4, Reacher-v4 \\
+Overlapping & Single connected manifold & Walker2d-v4 \\
+\bottomrule
+\end{tabular}
+\caption{Two distinct embedding space regimes requiring different clustering strategies.}
+\end{table}
+
+%==============================================================================
+\section{Behavior Encoder Architecture}
+%==============================================================================
+
+Before discussing clustering, we describe the encoder that produces the embeddings, as its training objectives are crucial for understanding why certain post-hoc features may be redundant.
+
+\subsection{Input Representation}
+
+Each trajectory $\tau = \{(\vect{s}_t, \vect{a}_t)\}_{t=0}^{T-1}$ is processed as follows:
+
+\textbf{Random Fourier Features (RFF):} States and actions are projected using RFF embeddings:
+\begin{align}
+    \phi_{\text{state}}(\vect{s}) &= \sqrt{\frac{2}{m_s}} \cos(\mat{W}_s \vect{s} + \vect{b}_s) \\
+    \phi_{\text{action}}(\vect{a}) &= \sqrt{\frac{2}{m_a}} \cos(\mat{W}_a \vect{a} + \vect{b}_a)
+\end{align}
+where $\mat{W}_s \sim \mathcal{N}(0, \sigma_s^2 \mat{I})$, $\mat{W}_a \sim \mathcal{N}(0, \sigma_a^2 \mat{I})$, and $m_s, m_a$ are the RFF dimensions.
+
+\begin{tcolorbox}[colback=blue!5,colframe=blue!40!black,title=RFF Hyperparameters]
+\begin{itemize}
+    \item $m_s = 64$ (state RFF dimension)
+    \item $m_a = 32$ (action RFF dimension)
+    \item $\sigma_s = \sigma_a = 0.001$ (Walker2d, Pusher) or $0.01$ (Reacher)
+\end{itemize}
+Small $\sigma$ values capture high-frequency patterns in state-action sequences.
+\end{tcolorbox}
+
+\textbf{Typed Token Embeddings:} Each timestep produces a token with type information:
+\begin{equation}
+    \vect{h}_t = [\phi_{\text{state}}(\vect{s}_t); \phi_{\text{action}}(\vect{a}_t)] + \vect{e}_{\text{type}}
+\end{equation}
+
+\textbf{CLS Token:} A learnable $[\text{CLS}]$ token is prepended and serves as the trajectory-level embedding after transformer processing.
+
+\subsection{Training Objectives}
+
+The encoder is trained with a composite loss:
+\begin{equation}
+    \mathcal{L} = \alpha \mathcal{L}_{\text{contrastive}} + \beta \mathcal{L}_{\text{InfoMax}} + \gamma \mathcal{L}_{\text{segment}}
+\end{equation}
+
+\subsubsection{Instance Contrastive Loss ($\alpha$ term)}
+
+Standard contrastive loss treating augmentations of the same trajectory as positives:
+\begin{equation}
+    \mathcal{L}_{\text{contrastive}} = -\log \frac{\exp(\text{sim}(\vect{z}_i, \vect{z}_i^+) / \tau)}{\sum_{j} \exp(\text{sim}(\vect{z}_i, \vect{z}_j) / \tau)}
+\end{equation}
+
+\subsubsection{Global-Local InfoMax Loss ($\beta$ term)}
+
+Maximizes mutual information between the global CLS token and local (state, action) tokens:
+\begin{equation}
+    \mathcal{L}_{\text{InfoMax}} = -\frac{1}{T} \sum_{t=1}^{T} \log \sigma\left( D_\psi(\vect{z}_{\text{CLS}}, \vect{h}_t) \right) - \log \sigma\left( -D_\psi(\vect{z}_{\text{CLS}}, \vect{h}_t^-) \right)
+\end{equation}
+where $D_\psi$ is a discriminator network and $\vect{h}_t^-$ are negative samples from other trajectories.
+
+\begin{tcolorbox}[colback=green!5,colframe=green!40!black,title=Key Insight: InfoMax Captures Dynamics]
+The InfoMax objective forces the CLS embedding to encode information about \textbf{how actions relate to states over time}. This is precisely what Jacobian-based features attempt to capture manually.
+\end{tcolorbox}
+
+\subsubsection{Segment Contrastive Loss ($\gamma$ term)}
+
+Ensures the global embedding is consistent with random sub-trajectory segments:
+\begin{equation}
+    \mathcal{L}_{\text{segment}} = -\log \frac{\exp(\text{sim}(\vect{z}_{\text{full}}, \vect{z}_{\text{seg}}) / \tau)}{\sum_{j} \exp(\text{sim}(\vect{z}_{\text{full}}, \vect{z}_{\text{seg},j}) / \tau)}
+\end{equation}
+
+\begin{tcolorbox}[colback=yellow!5,colframe=yellow!40!black,title=Key Insight: Segment Loss Captures Temporal Patterns]
+By requiring consistency between full trajectories and random segments, the encoder learns \textbf{temporal dynamics and control patterns} that are invariant to trajectory length and starting point.
+\end{tcolorbox}
+
+\subsection{Default Hyperparameters}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Parameter} & \textbf{Value} \\
+\midrule
+Embedding dimension $D$ & 32 \\
+Transformer heads & 4 \\
+Transformer layers & 2 \\
+Hidden dimension & 1024 \\
+Dropout & 0.1 \\
+$\alpha$ (contrastive weight) & 0.5 \\
+$\beta$ (InfoMax weight) & 1.0 \\
+$\gamma$ (segment weight) & 0.5 \\
+\bottomrule
+\end{tabular}
+\caption{Encoder training hyperparameters.}
+\end{table}
+
+%==============================================================================
+\section{Embedding Normalization}
+%==============================================================================
+
+All embeddings are $L_2$-normalized to project them onto the unit hypersphere $\set{S}^{D-1}$:
+\begin{equation}
+    \hat{\vect{z}}_i = \frac{\vect{z}_i}{\norm{\vect{z}_i}_2 + \epsilon}
+\end{equation}
+where $\epsilon = 10^{-8}$ prevents division by zero.
+
+\subsection{Rationale for Normalization}
+
+\begin{enumerate}
+    \item \textbf{Cosine similarity becomes dot product:}
+    \begin{equation}
+        \hat{\vect{z}}_i^\top \hat{\vect{z}}_j = \cos(\theta_{ij})
+    \end{equation}
+    where $\theta_{ij}$ is the angle between the original vectors.
+    
+    \item \textbf{Scale invariance:} Removes magnitude effects, focusing purely on directional similarity.
+    
+    \item \textbf{Bounded distances:} Cosine distance is bounded:
+    \begin{equation}
+        d_{\cos}(i, j) = 1 - \hat{\vect{z}}_i^\top \hat{\vect{z}}_j \in [0, 2]
+    \end{equation}
+\end{enumerate}
+
+%==============================================================================
+\section{$k$-NN Graph Construction}
+%==============================================================================
+
+We construct a weighted undirected graph $\set{G} = (\set{V}, \set{E}, \mat{W})$ encoding the local neighborhood structure of the embedding space.
+
+\subsection{Step 1: Compute $k$-Nearest Neighbors}
+
+For each embedding $\hat{\vect{z}}_i$, find the $k$ most similar embeddings using cosine distance:
+\begin{equation}
+    d_{\cos}(i, j) = 1 - \hat{\vect{z}}_i^\top \hat{\vect{z}}_j
+\end{equation}
+
+Let $\set{N}_k(i) = \{j_1, \ldots, j_k\}$ denote the indices of the $k$ nearest neighbors of point $i$ (excluding $i$ itself).
+
+\begin{tcolorbox}[colback=blue!5,colframe=blue!40!black,title=Intuition: Effect of $k$]
+\begin{itemize}
+    \item \textbf{Small $k$ (5--10):} Very local connections, may fragment cohesive clusters
+    \item \textbf{Large $k$ (50--100):} Denser connections, may connect distinct clusters
+\end{itemize}
+\end{tcolorbox}
+
+\subsection{Step 2: Compute Edge Weights via RBF Kernel}
+
+For each neighbor $j \in \set{N}_k(i)$, assign an edge weight using a Radial Basis Function (RBF) kernel on cosine similarity:
+\begin{equation}
+    w_{ij}^{\text{directed}} = \exp\left(\frac{\text{sim}(i,j)}{\sigma}\right) = \exp\left(\frac{\hat{\vect{z}}_i^\top \hat{\vect{z}}_j}{\sigma}\right)
+\end{equation}
+where $\sigma = 1.0$ is the kernel bandwidth.
+
+\begin{tcolorbox}[colback=green!5,colframe=green!40!black,title=Intuition: RBF Weighting]
+\begin{itemize}
+    \item Higher similarity $\rightarrow$ Higher edge weight $\rightarrow$ Stronger connection
+    \item Exponential transformation amplifies differences
+    \item Creates a ``soft'' graph where edge strength reflects neighborhood confidence
+\end{itemize}
+\end{tcolorbox}
+
+\subsection{Step 3: Symmetrization}
+
+The $k$-NN relation is \textit{not symmetric}: if $j \in \set{N}_k(i)$, it does not guarantee $i \in \set{N}_k(j)$. We symmetrize by taking the element-wise maximum:
+\begin{equation}
+    w_{ij} = \max(w_{ij}^{\text{directed}}, w_{ji}^{\text{directed}})
+\end{equation}
+
+This ensures:
+\begin{itemize}
+    \item No information is lost from asymmetric neighborhoods
+    \item The graph represents ``mutual similarity'' in a generous sense
+    \item Isolated points are less likely to become disconnected
+\end{itemize}
+
+%==============================================================================
+\section{Jacobian-Based Behavioral Features}
+%==============================================================================
+
+While trajectory embeddings capture high-level behavioral patterns, one might consider enhancing edge weights using features derived from the \textbf{action-state Jacobian}. We describe these features here but argue in Section~\ref{sec:redundancy} that they are largely redundant given our encoder's training objectives.
+
+\subsection{Motivation}
+
+Two trajectories may have similar embeddings but exhibit fundamentally different \textit{control strategies}:
+\begin{itemize}
+    \item One policy may use high-gain, reactive control
+    \item Another may use smooth, anticipatory control
+    \item They might reach similar states via different dynamical paths
+\end{itemize}
+
+The Jacobian $\frac{\partial \vect{s}_{t+1}}{\partial \vect{a}_t}$ captures \textit{how sensitive the next state is to the current action}---a signature of the underlying control strategy.
+
+\subsection{Jacobian Estimation via Finite Differences}
+
+For a trajectory $\tau = \{(\vect{s}_t, \vect{a}_t)\}_{t=0}^{T-1}$, the true Jacobian at time $t$ is:
+\begin{equation}
+    \mat{J}_t = \frac{\partial \vect{s}_{t+1}}{\partial \vect{a}_t} \in \R^{S \times A}
+\end{equation}
+where $S$ is the state dimension and $A$ is the action dimension.
+
+Since we lack analytical access to environment dynamics, we estimate the Jacobian's magnitude using \textbf{finite differences}:
+
+\textbf{State Change:}
+\begin{equation}
+    \Delta \vect{s}_t = \vect{s}_{t+1} - \vect{s}_t \in \R^S
+\end{equation}
+
+\textbf{Control Sensitivity (Jacobian Norm Proxy):}
+\begin{equation}
+    \gamma_t = \frac{\norm{\Delta \vect{s}_t}_2}{\norm{\vect{a}_t}_2 + \epsilon}
+\end{equation}
+
+This ratio measures how much state change results from a unit of action---a proxy for $\norm{\mat{J}_t}_F$ (the Frobenius norm of the Jacobian).
+
+\subsection{Covariance-Based Jacobian Features}
+
+For a more refined estimate, compute the \textbf{cross-covariance} between state changes and actions:
+\begin{equation}
+    \mat{C}_{\Delta s, a} = \text{Cov}(\Delta \vect{s}, \vect{a}) \in \R^{S \times A}
+\end{equation}
+
+Extract features via \textbf{Singular Value Decomposition (SVD)}:
+\begin{equation}
+    \mat{C}_{\Delta s, a} = \mat{U} \boldsymbol{\Sigma} \mat{V}^\top
+\end{equation}
+where $\boldsymbol{\Sigma} = \text{diag}(\sigma_1, \sigma_2, \ldots)$ with $\sigma_1 \geq \sigma_2 \geq \ldots$
+
+\textbf{Key features:}
+\begin{itemize}
+    \item $\sigma_{\max} = \sigma_1$: Largest singular value (dominant control direction magnitude)
+    \item $\rho = \frac{\sigma_1}{\sum_i \sigma_i}$: Singular value ratio (control dimensionality)
+\end{itemize}
+
+\subsection{Complete Behavioral Feature Vector}
+
+For each trajectory $\tau_i$, we compute an 8-dimensional behavioral feature vector:
+\begin{equation}
+    \vect{b}_i = \begin{bmatrix}
+        \bar{\gamma} \\
+        \sigma_\gamma \\
+        \gamma_{\max} \\
+        \text{Var}_t(\gamma_t) \\
+        \sigma_{\max} \\
+        \rho \\
+        \bar{a} \\
+        \sigma_a
+    \end{bmatrix}
+    \quad
+    \begin{array}{l}
+        \text{(mean control sensitivity)} \\
+        \text{(std of control sensitivity)} \\
+        \text{(max control sensitivity)} \\
+        \text{(temporal variance of sensitivity)} \\
+        \text{(largest singular value of } \mat{C}_{\Delta s, a}) \\
+        \text{(singular value concentration ratio)} \\
+        \text{(mean action magnitude)} \\
+        \text{(std of action magnitude)}
+    \end{array}
+\end{equation}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}llp{7cm}@{}}
+\toprule
+\textbf{Feature} & \textbf{Symbol} & \textbf{Interpretation} \\
+\midrule
+Mean sensitivity & $\bar{\gamma}$ & Average control gain over trajectory \\
+Sensitivity std & $\sigma_\gamma$ & Variability in control gain \\
+Max sensitivity & $\gamma_{\max}$ & Peak control moment \\
+Temporal variance & $\text{Var}_t(\gamma_t)$ & How much control gain changes over time \\
+Max singular value & $\sigma_{\max}$ & Strength of dominant action-state coupling \\
+SV ratio & $\rho$ & Dimensionality of control \\
+Mean action & $\bar{a}$ & Average effort level \\
+Action std & $\sigma_a$ & Effort variability \\
+\bottomrule
+\end{tabular}
+\caption{Behavioral feature descriptions.}
+\end{table}
+
+\subsection{Edge Reweighting with Behavioral Similarity}
+
+After computing behavioral features $\{\vect{b}_i\}_{i=1}^N$, normalize them:
+\begin{equation}
+    \tilde{\vect{b}}_i = \frac{\vect{b}_i - \bar{\vect{b}}}{\sigma_{\vect{b}} + \epsilon}
+\end{equation}
+
+For each edge $(i, j)$, compute \textbf{behavioral similarity} using an RBF kernel:
+\begin{equation}
+    s_{ij}^{\text{behav}} = \exp\left(-\frac{\norm{\tilde{\vect{b}}_i - \tilde{\vect{b}}_j}_2^2}{2\sigma_b^2}\right)
+\end{equation}
+where $\sigma_b = 1.0$ is the behavioral kernel bandwidth.
+
+\textbf{Final edge weight} combines embedding-based and behavioral similarities:
+\begin{equation}
+    w_{ij}^{\text{final}} = (1 - \alpha) \cdot w_{ij}^{\text{emb}} + \alpha \cdot s_{ij}^{\text{behav}} \cdot w_{ij}^{\text{emb}}
+\end{equation}
+where $\alpha \in [0, 1]$ controls the influence of behavioral features (typically $\alpha = 0.2$ to $0.3$).
+
+%==============================================================================
+\section{On the Redundancy of Jacobian Features}
+\label{sec:redundancy}
+%==============================================================================
+
+\begin{tcolorbox}[colback=red!5,colframe=red!40!black,title=Key Finding]
+Given the encoder's training objectives (InfoMax + Segment Contrastive), Jacobian-based behavioral features are largely \textbf{redundant}. The encoder already learns to capture action-state dynamics through its loss functions.
+\end{tcolorbox}
+
+\subsection{What the Encoder Already Captures}
+
+The three training objectives ensure that the CLS embedding encodes control dynamics:
+
+\subsubsection{Global-Local InfoMax ($\beta$ term)}
+
+\begin{equation}
+    \mathcal{L}_{\text{InfoMax}} = -\MI(\vect{z}_{\text{CLS}}; \{\vect{h}_t\}_{t=1}^T)
+\end{equation}
+
+This loss \textbf{maximizes mutual information} between the global CLS token and local (state, action) tokens. For the CLS embedding to predict local tokens, it must encode:
+\begin{itemize}
+    \item How actions relate to states at each timestep
+    \item The temporal structure of state-action sequences
+    \item Control patterns that distinguish different policies
+\end{itemize}
+
+\textbf{This is precisely what $\gamma_t = \norm{\Delta \vect{s}_t} / \norm{\vect{a}_t}$ attempts to capture.}
+
+\subsubsection{Segment Contrastive Loss ($\gamma$ term)}
+
+By enforcing consistency between full trajectory embeddings and sub-trajectory segments:
+\begin{equation}
+    \vect{z}_{\text{full}} \approx \vect{z}_{\text{segment}}
+\end{equation}
+
+the encoder learns representations that are:
+\begin{itemize}
+    \item Invariant to trajectory length
+    \item Sensitive to local control dynamics (since segments must match)
+    \item Robust to temporal variations
+\end{itemize}
+
+\textbf{This captures the temporal variance $\text{Var}_t(\gamma_t)$ and smoothness of control.}
+
+\subsubsection{RFF Embeddings}
+
+The Random Fourier Feature embeddings with small bandwidth ($\sigma = 0.001$):
+\begin{equation}
+    \phi(\vect{s}) = \sqrt{\frac{2}{m}} \cos(\mat{W} \vect{s} + \vect{b}), \quad \mat{W} \sim \mathcal{N}(0, \sigma^{-2} \mat{I})
+\end{equation}
+
+capture \textbf{high-frequency patterns} in state-action sequences, including rapid changes in control sensitivity.
+
+\subsection{Mapping Jacobian Features to Encoder Components}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Jacobian Feature} & \textbf{Encoder Captures Via} & \textbf{Mechanism} \\
+\midrule
+$\bar{\gamma}$ (mean sensitivity) & InfoMax & CLS must encode action-state relationships \\
+$\sigma_\gamma$ (sensitivity variance) & Segment contrastive & Temporal patterns in sub-trajectories \\
+$\gamma_{\max}$ (max sensitivity) & Attention mechanism & Peak control moments get high attention \\
+$\text{Var}_t(\gamma_t)$ & Segment contrastive & Consistency across trajectory segments \\
+$\sigma_{\max}$ (SVD feature) & Cross-attention & State-action coupling in transformer \\
+$\bar{a}, \sigma_a$ (action stats) & Action token embeddings & Direct encoding of action magnitudes \\
+\bottomrule
+\end{tabular}
+\caption{How encoder training captures information equivalent to Jacobian features.}
+\end{table}
+
+\subsection{Empirical Verification}
+
+To verify redundancy, compute the correlation between embedding-based and Jacobian-based similarity structures:
+
+\begin{equation}
+    \mat{S}^{\text{emb}}_{ij} = \hat{\vect{z}}_i^\top \hat{\vect{z}}_j, \quad
+    \mat{S}^{\text{behav}}_{ij} = \exp\left(-\frac{\norm{\tilde{\vect{b}}_i - \tilde{\vect{b}}_j}^2}{2}\right)
+\end{equation}
+
+\begin{equation}
+    r = \text{Corr}\left( \text{vec}(\mat{S}^{\text{emb}}), \text{vec}(\mat{S}^{\text{behav}}) \right)
+\end{equation}
+
+\textbf{Interpretation:}
+\begin{itemize}
+    \item $r > 0.7$: High redundancy — embeddings already capture behavioral dynamics
+    \item $r < 0.4$: Low redundancy — Jacobian features add novel information
+\end{itemize}
+
+\subsection{Recommendation}
+
+Given the sophisticated encoder training (InfoMax + Segment Contrastive + RFF), we \textbf{disable behavioral features by default}:
+
+\begin{verbatim}
+use_behavioral_features = False  # Default
+\end{verbatim}
+
+Retain the capability for:
+\begin{itemize}
+    \item \textbf{Ablation studies:} Quantify how much Jacobian features help/hurt
+    \item \textbf{Cold-start scenarios:} When encoder training fails or data is scarce
+    \item \textbf{Interpretability:} Jacobian features are human-readable
+    \item \textbf{Cross-domain transfer:} Physics-based features may generalize better
+\end{itemize}
+
+%==============================================================================
+\section{Automatic Regime Detection}
+%==============================================================================
+
+This is the \textbf{critical decision point} determining which clustering strategy to use.
+
+\subsection{Connected Components}
+
+A \textbf{connected component} of a graph is a maximal set of vertices with paths between every pair:
+\begin{equation}
+    \set{C} \subseteq \set{V} \text{ is a connected component if } \forall u, v \in \set{C}, \exists \text{ path } u \leadsto v \text{ in } \set{G}
+\end{equation}
+
+If a graph has multiple connected components, there are ``islands'' of vertices with \textit{no edges between them}.
+
+\subsection{Detection Algorithm}
+
+We check connectivity at five probe values: $k \in \{15, 30, 50, 75, 100\}$:
+
+\begin{algorithm}[H]
+\caption{Regime Detection}
+\begin{algorithmic}[1]
+\For{$k_{\text{probe}} \in \{15, 30, 50, 75, 100\}$}
+    \State Build $k$-NN graph $\set{G}_{k_{\text{probe}}}$
+    \State $n_{\text{comp}} \gets$ count connected components of $\set{G}_{k_{\text{probe}}}$
+    \If{$n_{\text{comp}} \geq 2$}
+        \State \Return \textsc{Isolated} regime
+    \EndIf
+\EndFor
+\State \Return \textsc{Overlapping} regime
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Rationale for Multiple Probe Values}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}cl@{}}
+\toprule
+\textbf{Probe $k$} & \textbf{Purpose} \\
+\midrule
+15 & Catches well-separated islands \\
+30 & Catches moderately separated islands \\
+50 & Catches marginally separated islands \\
+75, 100 & Final check for edge cases \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Key insight:} If clusters are truly isolated, then \textit{for any reasonable $k$}, each cluster forms its own connected component. Increasing $k$ adds edges \textit{within} each cluster but never creates edges \textit{between} clusters.
+
+%==============================================================================
+\section{Isolated Regime: Stable-$k$ Connected Components}
+%==============================================================================
+
+When the embedding space contains isolated islands, we use connected components directly as clusters.
+
+\subsection{The Stable-$k$ Algorithm}
+
+\textbf{Goal:} Find the smallest $k$ where the connected component partition \textit{stabilizes}.
+
+\begin{algorithm}[H]
+\caption{Find Stable $k$ (with Early Exit)}
+\begin{algorithmic}[1]
+\Require Embeddings, $k_{\text{range}} = (k_{\min}, k_{\max})$, stability\_window $= 3$
+\Ensure Optimal $k^*$, cluster labels
+\State Sample $k$ values: $k_1, k_2, \ldots, k_n$ uniformly in $[k_{\min}, k_{\max}]$
+\State stable\_count $\gets 0$
+\For{each $k_i$}
+    \State Build $k$-NN graph $\set{G}_{k_i}$
+    \State Compute connected components: $\set{P}_{k_i} = \{C_1, C_2, \ldots, C_m\}$
+    \If{$i > 1$}
+        \State Compute $\text{ARI}(\set{P}_{k_i}, \set{P}_{k_{i-1}})$
+        \If{$\text{ARI} = 1.0$}
+            \State stable\_count $\gets$ stable\_count $+ 1$
+            \If{stable\_count $\geq$ stability\_window}
+                \State $k^* \gets k_{i - \text{stability\_window} + 1}$ \Comment{First $k$ in stable window}
+                \State \Return $k^*$, $\set{P}_{k^*}$ \Comment{\textbf{Early exit}}
+            \EndIf
+        \Else
+            \State stable\_count $\gets 0$
+        \EndIf
+    \EndIf
+\EndFor
+\State \Return heuristic selection if no stable window found
+\end{algorithmic}
+\end{algorithm}
+
+\begin{tcolorbox}[colback=green!5,colframe=green!40!black,title=Efficiency: Early Exit]
+Once stability is detected (3 consecutive $k$ values with identical partitions), the algorithm immediately returns. This avoids checking the remaining $k$ values, reducing computation from $O(n)$ to $O(\text{stable position})$.
+\end{tcolorbox}
+
+\subsection{Adjusted Rand Index (ARI)}
+
+Connected components assign arbitrary integer labels. The \textbf{Adjusted Rand Index} compares partitions structurally:
+\begin{equation}
+    \text{ARI}(\set{P}_1, \set{P}_2) = \frac{\text{RI} - \E[\text{RI}]}{\max(\text{RI}) - \E[\text{RI}]}
+\end{equation}
+where RI counts pairs of points that are either together in both partitions or separate in both.
+
+\textbf{ARI = 1.0} means the partitions are \textit{identical} (up to label permutation).
+
+\subsection{Stability Window}
+
+We require \textbf{3 consecutive stable $k$ values} before declaring stability, preventing:
+\begin{itemize}
+    \item False positives from coincidental matches
+    \item Sensitivity to noise in the $k$-NN graph
+\end{itemize}
+
+%==============================================================================
+\section{Overlapping Regime: Joint $k$-Resolution Sweep}
+%==============================================================================
+
+When the embedding space is a single connected manifold, we use the \textbf{Leiden algorithm} with joint parameter search.
+
+\subsection{The Leiden Algorithm}
+
+Leiden optimizes the \textbf{modularity function} with resolution parameter $\gamma$:
+\begin{equation}
+    Q_\gamma = \frac{1}{2m} \sum_{i,j} \left[ w_{ij} - \gamma \frac{s_i s_j}{2m} \right] \delta(c_i, c_j)
+\end{equation}
+
+\textbf{Components:}
+\begin{itemize}
+    \item $m = \frac{1}{2}\sum_{i,j} w_{ij}$: Total edge weight
+    \item $s_i = \sum_j w_{ij}$: \textbf{Strength} (weighted degree) of node $i$
+    \item $c_i \in \{1, \ldots, K\}$: Cluster assignment of node $i$
+    \item $\delta(c_i, c_j)$: 1 if $c_i = c_j$, else 0
+    \item $\gamma > 0$: \textbf{Resolution parameter}
+\end{itemize}
+
+\begin{tcolorbox}[colback=blue!5,colframe=blue!40!black,title=Intuition: Modularity]
+\begin{itemize}
+    \item $w_{ij}$: \textbf{Actual} edge weight between $i$ and $j$
+    \item $\gamma \frac{s_i s_j}{2m}$: \textbf{Expected} edge weight under null model
+    \item $Q_\gamma > 0$: Clusters have more internal edges than random $\rightarrow$ good partition
+\end{itemize}
+\end{tcolorbox}
+
+\subsection{Effect of Resolution $\gamma$}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}cll@{}}
+\toprule
+$\gamma$ & \textbf{Effect} & \textbf{Result} \\
+\midrule
+$< 1$ & Expected term smaller $\rightarrow$ easier to beat & Fewer, larger clusters \\
+$= 1$ & Standard modularity & Balanced clusters \\
+$> 1$ & Expected term larger $\rightarrow$ harder to beat & More, smaller clusters \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Why Modularity for Selection (Not Silhouette)?}
+
+\textbf{Observation:} In experiments, partitions with best NMI/ARI (matching ground truth) often had \textit{lower silhouette} than over-segmented partitions.
+
+\textbf{Why this happens:}
+
+Silhouette measures geometric compactness:
+\begin{equation}
+    S(i) = \frac{b(i) - a(i)}{\max(a(i), b(i))}
+\end{equation}
+where $a(i)$ = mean intra-cluster distance, $b(i)$ = mean distance to nearest other cluster.
+
+\textbf{The problem:} Smaller clusters are more compact (lower $a(i)$) and further from others (higher $b(i)$), giving \textit{higher silhouette}---even if they represent over-segmentation.
+
+\textbf{Why modularity works better:}
+\begin{itemize}
+    \item Modularity measures \textbf{graph-theoretic} community structure
+    \item Over-segmentation $\rightarrow$ splits communities $\rightarrow$ reduces within-community edges $\rightarrow$ \textbf{lower modularity}
+    \item Correct partition $\rightarrow$ maximizes edge ratio $\rightarrow$ \textbf{higher modularity}
+\end{itemize}
+
+\subsection{Joint Parameter Search}
+
+We search over a 2D grid of $(k, \gamma)$ values:
+
+\textbf{Default search grid:}
+\begin{itemize}
+    \item $k \in \{10, 15, 20, 25, 30, 40, 50, 70\}$
+    \item $\gamma \in \{0.01, 0.025, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.5, 0.7, 1.0, 1.3, 1.5, 2.0\}$
+\end{itemize}
+
+\begin{algorithm}[H]
+\caption{Joint $k$-Resolution Sweep}
+\begin{algorithmic}[1]
+\For{each $k$ in $k\_values$}
+    \State Build $k$-NN graph $\set{G}_k$
+    \For{each $\gamma$ in $resolution\_values$}
+        \State $\text{labels} \gets \text{Leiden}(\set{G}_k, \gamma)$
+        \State Filter clusters with size $< n_{\min}$
+        \If{valid\_clusters $\geq 2$}
+            \State Store $(k, \gamma, \text{labels}, \text{modularity})$
+        \EndIf
+    \EndFor
+\EndFor
+\State $(k^*, \gamma^*) \gets \arg\max_{k,\gamma} \text{modularity}(k, \gamma)$
+\State \Return labels from $(k^*, \gamma^*)$
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Why Joint Search Over $k$ and $\gamma$?}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Parameter} & \textbf{What it controls} \\
+\midrule
+$k$ & \textbf{Graph density}: How many neighbors define local similarity \\
+$\gamma$ & \textbf{Cluster granularity}: How small clusters can be before merging \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+These interact non-trivially:
+\begin{itemize}
+    \item Low $k$ + low $\gamma$: Sparse graph, few large clusters
+    \item Low $k$ + high $\gamma$: Sparse graph, many tiny clusters (may fragment)
+    \item High $k$ + low $\gamma$: Dense graph, clusters may merge inappropriately
+    \item High $k$ + high $\gamma$: Dense graph, may find meaningful sub-communities
+\end{itemize}
+
+%==============================================================================
+\section{Post-Processing}
+%==============================================================================
+
+After obtaining cluster assignments $\{c_1, \ldots, c_N\}$:
+
+\subsection{Step 1: Filter Small Clusters}
+
+Clusters with fewer than $n_{\min}$ points are relabeled as noise:
+\begin{equation}
+    c_i \leftarrow -1 \quad \text{if} \quad |\{j : c_j = c_i\}| < n_{\min}
+\end{equation}
+
+Default: $n_{\min} = \max(5, \lfloor 0.02 \cdot N \rfloor)$
+
+\subsection{Step 2: Relabel Consecutively}
+
+Valid cluster IDs are mapped to $\{0, 1, \ldots, K-1\}$.
+
+\subsection{Step 3: Compute Cluster Centers}
+
+For each cluster $c$, compute the normalized centroid:
+\begin{equation}
+    \boldsymbol{\mu}_c = \frac{\sum_{i: c_i = c} \hat{\vect{z}}_i}{\left\|\sum_{i: c_i = c} \hat{\vect{z}}_i\right\|_2}
+\end{equation}
+
+\subsection{Step 4: Build Cluster Registry}
+
+For each cluster, store metadata:
+\begin{itemize}
+    \item $\boldsymbol{\mu}_c$: Normalized centroid
+    \item $r_{95}$: 95th percentile cosine distance (cluster radius)
+    \item count: Number of points
+    \item $d_{\cos}^{\text{sorted}}$: Sorted cosine distances (for percentile queries)
+\end{itemize}
+
+%==============================================================================
+\section{Complete Algorithm}
+%==============================================================================
+
+\begin{algorithm}[H]
+\caption{Adaptive Graph-Based Trajectory Clustering}
+\begin{algorithmic}[1]
+\Require Embeddings $\mat{Z} \in \R^{N \times D}$, $k\_range$, $resolution\_values$, $n_{\min}$
+\Ensure Cluster labels $\vect{c} \in \{-1, 0, \ldots, K-1\}^N$, cluster centers $\boldsymbol{\mu}$
+
+\State \textbf{// Step 1: Normalize}
+\State $\hat{\mat{Z}} \gets \mat{Z} / \norm{\mat{Z}}_2$
+
+\State \textbf{// Step 2: Regime Detection}
+\For{$k_{\text{probe}} \in \{15, 30, 50, 75, 100\}$}
+    \State Build $k$-NN graph $\set{G}_{k_{\text{probe}}}$
+    \State $n_{\text{comp}} \gets$ count connected components
+    \If{$n_{\text{comp}} \geq 2$}
+        \State regime $\gets$ \textsc{Isolated}
+        \State \textbf{break}
+    \EndIf
+\EndFor
+\If{all probes give $n_{\text{comp}} = 1$}
+    \State regime $\gets$ \textsc{Overlapping}
+\EndIf
+
+\State \textbf{// Step 3: Clustering}
+\If{regime = \textsc{Isolated}}
+    \State Sweep $k$ to find stable partition via ARI
+    \State Find $k^*$ where ARI $= 1.0$ for 3 consecutive $k$ (with early exit)
+    \State \Return connected\_components($\set{G}_{k^*}$)
+\Else
+    \For{each $(k, \gamma)$ in grid}
+        \State Build $k$-NN graph $\set{G}_k$
+        \State labels $\gets$ Leiden($\set{G}_k$, $\gamma$)
+        \State Store (labels, modularity)
+    \EndFor
+    \State Select $(k^*, \gamma^*)$ with highest \textbf{modularity}
+    \State \Return Leiden partition at $(k^*, \gamma^*)$
+\EndIf
+
+\State \textbf{// Step 4: Post-process}
+\State Filter clusters with size $< n_{\min} \rightarrow$ noise
+\State Relabel to consecutive integers $\{0, 1, \ldots, K-1\}$
+\State Compute normalized cluster centers
+\end{algorithmic}
+\end{algorithm}
+
+\newpage
+%==============================================================================
+\section{Summary}
+%==============================================================================
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Aspect} & \textbf{Isolated Regime} & \textbf{Overlapping Regime} \\
+\midrule
+Environments & Pusher-v4, Reacher-v4 & Walker2d-v4 \\
+Embedding structure & Well-separated islands & Single connected manifold \\
+Detection & $\geq 2$ connected components & 1 component at all probe $k$ \\
+Clustering method & Connected components & Leiden algorithm \\
+Parameter search & Sweep $k$ only (early exit) & Joint $(k, \gamma)$ sweep \\
+Selection criterion & ARI stability & \textbf{Modularity} \\
+\bottomrule
+\end{tabular}
+\caption{Comparison of clustering strategies for different data regimes.}
+\end{table}
+
+\subsection{On Jacobian Features}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}lp{10cm}@{}}
+\toprule
+\textbf{Status} & \textbf{Recommendation} \\
+\midrule
+Default & \textbf{Disabled} --- encoder already captures control dynamics via InfoMax and segment contrastive losses \\
+Enable when & Cold-start, few-shot learning, interpretability requirements, cross-domain transfer \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Computational Complexity}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Step} & \textbf{Complexity} & \textbf{Notes} \\
+\midrule
+Embedding normalization & $O(ND)$ & Linear in data size \\
+$k$-NN search (brute) & $O(N^2 D)$ & Dominant for small $N$ \\
+Connected components & $O(N + E)$ & Linear in graph size \\
+Stable-$k$ (with early exit) & $O(n_{\text{stable}} \cdot N^2 D)$ & Often $n_{\text{stable}} \ll n_{\text{samples}}$ \\
+Leiden clustering & $O(N \log N)$ & Per iteration \\
+Joint $(k, \gamma)$ sweep & $O(n_k \cdot n_\gamma \cdot N \log N)$ & $\sim$112 Leiden runs \\
+\bottomrule
+\end{tabular}
+\caption{Computational complexity of each algorithm step.}
+\end{table}
+
+%==============================================================================
+\section{Implementation Details}
+%==============================================================================
+
+\subsection{Default Parameters}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Parameter} & \textbf{Default} & \textbf{Description} \\
+\midrule
+\texttt{k\_range} & $(10, 100)$ & Range of $k$ values to search \\
+\texttt{n\_samples} & 50 & Number of $k$ values to sample \\
+\texttt{stability\_window} & 3 & Consecutive stable partitions required \\
+\texttt{min\_cluster\_size} & $\max(5, 2\%N)$ & Minimum cluster size \\
+\texttt{use\_behavioral\_features} & \texttt{False} & Jacobian feature reweighting \\
+\texttt{behavioral\_alpha} & 0.3 & Weight for behavioral features (if enabled) \\
+\texttt{seed} & 42 & Random seed for reproducibility \\
+\bottomrule
+\end{tabular}
+\caption{Default clustering parameters.}
+\end{table}
+
+\subsection{Environment-Specific Settings}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}llll@{}}
+\toprule
+\textbf{Environment} & \textbf{Expected Regime} & \textbf{$K$ (modes)} & \textbf{Notes} \\
+\midrule
+Pusher-v4 & Isolated & 6 & Well-separated goal positions \\
+Reacher-v4 & Isolated & 6 & Well-separated target angles \\
+Walker2d-v4 & Overlapping & 3 & Continuous gait variations \\
+\bottomrule
+\end{tabular}
+\caption{Environment characteristics and expected clustering behavior.}
+\end{table}
+
+\end{document}
